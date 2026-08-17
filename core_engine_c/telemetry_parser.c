@@ -3,6 +3,13 @@
 #include<stdint.h>
 #include<string.h>
 
+/*defining magic bytes for file headers*/
+/*magic bytes definition: 'P', 'H', 'N', 'X'*/
+#define MAGIC_BYTE_0 0x50
+#define MAGIC_BYTE_1 0x48 
+#define MAGIC_BYTE_2 0x4E 
+#define MAGIC_BYTE_3 0x58
+
 /*Using pragma to control structure padding and alignment */
 
 /*Saving current alignment setting onto an internal compiler stack, 
@@ -14,6 +21,7 @@ one after the other*/
 #pragma pack(push,1)
 
 typedef struct{
+    uint8_t magic[4];/*Magic signature "PHNX"*/
     uint32_t file_id; /*tracking id*/
     uint64_t file_size_bytes; /*unsigned int for tracking large files*/
     uint16_t chunk_count; /*unsigned int for 4KB chuncks*/
@@ -32,7 +40,7 @@ int export_telemetry(const char *filename, FileTelemetry *data)
     if (fp == NULL)
     {
         perror("[ERROR]The file cannot be opened");
-        exit(1);
+        return -1;
     }
 
     /*writing the the  raw struct directly onto the disk using fwrite*/
@@ -59,7 +67,7 @@ int import_telemetry(const char *filename, FileTelemetry *out_data)
     if(fp == NULL)
     {
         perror("[ERROR] The file could not be opened in read mode");
-        exit(1);
+        return -1;
     }
 
     /*reading raw binary stream directly into the target struct pointer*/
@@ -67,15 +75,24 @@ int import_telemetry(const char *filename, FileTelemetry *out_data)
 
     fclose(fp);
 
+    /*Magic bytes verification*/
+    if(out_data->magic[0] != MAGIC_BYTE_0 || out_data->magic[1] != MAGIC_BYTE_1 || 
+        out_data->magic[2] != MAGIC_BYTE_2 || out_data->magic[3] != MAGIC_BYTE_3)
+    {
+        printf("[ALERT] Invalid payload header, Magic bytes mismatch!\n");
+        return -1;
+    }
+
     return(read_bytes == 1)? 0:-1;
 }
 
 int main(void)
 {   
     /*payload because the telemetry data is actual cargo that is distinct*/
-    printf("[INFO] Executing Phoenix core payload test\n");
+    printf("[INFO] Executing Phoenix core payload header test\n");
 
     FileTelemetry original_record = {
+        .magic = {MAGIC_BYTE_0, MAGIC_BYTE_1, MAGIC_BYTE_2, MAGIC_BYTE_3},
         .file_id = 9001,
         .file_size_bytes = 1048576,
         .chunk_count = 256,
@@ -93,7 +110,12 @@ int main(void)
     /*Importing struct memory state back*/
     FileTelemetry imported_record;
     if (import_telemetry(payload_path, &imported_record) == 0) {
-        printf("[SUCCESS] Payload imported cleanly.\n");
+        printf("[SUCCESS] Payload imported and validated cleanly.\n");
+        printf("Magic header: %c%c%c%c\n",
+                imported_record.magic[0],
+                imported_record.magic[1],
+                imported_record.magic[2],
+                imported_record.magic[3]);
         printf(" -> Header ID: %u\n", imported_record.file_id);
         printf(" -> Size: %llu bytes\n", (unsigned long long)imported_record.file_size_bytes);
         printf(" -> Status Flag: %c\n", imported_record.status_flag);
