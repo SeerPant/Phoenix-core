@@ -29,7 +29,7 @@ typedef struct{
 } FileTelemetry;
 
 /*Restoring alignment setting to before that of 'push' limiting the tightly packaged format only to FileTelemetry*/
-#pragma pack(pop) /*with this the size of struct is exactly 15 bytes(4+8+2+1)*/
+#pragma pack(pop) /*with this the size of struct is exactly 19 bytes(4+4+8+2+1)*/
 
 int export_telemetry(const char *filename, FileTelemetry *data)
 {
@@ -86,10 +86,37 @@ int import_telemetry(const char *filename, FileTelemetry *out_data)
     return(read_bytes == 1)? 0:-1;
 }
 
+/*function to create a malicious binary payload to test the magic byte guardrail for malicious files*/
+
+void test_malicious_payload(const char *filename)
+{
+    printf("[TEST] Crafting malicious payload with invalid header signature..\n");
+
+    /*Creating fake record*/
+    FileTelemetry fake_record = {
+        .magic = {0xDE, 0xAD, 0xBE, 0xEF},
+        .file_id = 6001, 
+        .file_size_bytes = 4096,
+        .chunk_count = 13,
+        .status_flag = 'v'
+    };
+
+    export_telemetry(filename, &fake_record);
+
+    FileTelemetry result;
+    printf("[TEST] Attempting to load corrupt payload...\n" );
+    if(import_telemetry(filename, &result) !=0){
+        printf("[SUCCESSFULLY DEFENDED] Parser correctly blocked malicious payload!\n");
+    }else{
+        printf("[VULNERABILITY DETECTED] Parser accepted corrupted magic bytes!\n");
+    }
+}
+
+
 int main(void)
 {   
     /*payload because the telemetry data is actual cargo that is distinct*/
-    printf("[INFO] Executing Phoenix core payload header test\n");
+    printf("[INFO] Executing Phoenix core Telemetry engine\n");
 
     FileTelemetry original_record = {
         .magic = {MAGIC_BYTE_0, MAGIC_BYTE_1, MAGIC_BYTE_2, MAGIC_BYTE_3},
@@ -102,6 +129,9 @@ int main(void)
     /*creating variable to hold the record file of the telemetry*/
     const char *payload_path = "C:\\msys64\\ucrt64\\bin\\telemetry_record.bin";
 
+    /*path to corrupt telemetry payload*/
+    const char *corrupt_path = "C:\\msys64\\ucrt64\\bin\\corrupt_payload.bin";
+
     /*running export_telemety to save the struct to the file*/
     if (export_telemetry(payload_path, &original_record) == 0) {
         printf("[SUCCESS] Telemetry binary payload written to %s\n", payload_path);
@@ -110,16 +140,18 @@ int main(void)
     /*Importing struct memory state back*/
     FileTelemetry imported_record;
     if (import_telemetry(payload_path, &imported_record) == 0) {
-        printf("[SUCCESS] Payload imported and validated cleanly.\n");
+        printf("[SUCCESS] Payload imported and validated cleanly\n");
         printf("Magic header: %c%c%c%c\n",
                 imported_record.magic[0],
                 imported_record.magic[1],
                 imported_record.magic[2],
                 imported_record.magic[3]);
-        printf(" -> Header ID: %u\n", imported_record.file_id);
-        printf(" -> Size: %llu bytes\n", (unsigned long long)imported_record.file_size_bytes);
-        printf(" -> Status Flag: %c\n", imported_record.status_flag);
+        printf("Header ID: %u\n", imported_record.file_id);
+        printf("Size: %llu bytes\n", (unsigned long long)imported_record.file_size_bytes);
+        printf("Status Flag: %c\n", imported_record.status_flag);
     }
+
+    test_malicious_payload(corrupt_path);
 
     return 0;
 
